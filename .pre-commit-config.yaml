@@ -1,0 +1,12 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.8
+    hooks:
+      - id: ruff
+        name: Apply linter fixes
+        args: [--fix]
+        types: [python]
+        require_serial: true
+      - id: ruff-format
+        name: Apply formatting fixes
+        types: [python]

@@ -2,10 +2,7 @@
 
 """Tests for `mnlvm_video_downloader` package."""
 
-
 import unittest
-
-from mnlvm_video_downloader import mnlvm_video_downloader
 
 
 class TestMnlvm_video_downloader(unittest.TestCase):
