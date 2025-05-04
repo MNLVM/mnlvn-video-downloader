@@ -6,28 +6,7 @@ from typing import Any, Dict, List, Optional
 import subprocess
 import validators
 from yt_dlp import YoutubeDL
-import re
-# from utils.utils import safe_path_string, clean_search_query
-
-
-def safe_path_string(string: str) -> str:
-    keep_characters = " !£$%^&()_-+=,.;'@#~[]{}"
-    new_string = ""
-
-    for c in string:
-        if c.isalnum() or c in keep_characters:
-            new_string = new_string + c
-        else:
-            new_string = new_string + "_"
-
-    return re.sub(r"\.+$", "", new_string.rstrip()).encode("utf8").decode("utf8")
-
-
-def clean_search_query(artist_title: str) -> str:
-    cleaned = re.sub(r"\([^)]*\)", "", artist_title)
-    cleaned = re.sub(r" - .*Remix", "", cleaned)
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    return cleaned
+from utils.utils import safe_path_string, clean_search_query
 
 
 class YouTubeDownloaderController:
@@ -221,30 +200,3 @@ class YouTubeDownloaderController:
             path = self.output_dir / f"{safe_path_string(info['title'])}.mp4"
             print(f"Downloaded: {info['title']}")
             return path
-
-
-if __name__ == "__main__":
-
-    async def main():
-        downloader = YouTubeDownloaderController(
-            output_dir="downloads",
-            max_workers=4,
-            browser="chrome",
-            ffmpeg_path="ffmpeg",
-        )
-
-        csv_path = r"C:\Users\maste\Documents\Playlist\playlist.csv"
-        tracks = await downloader.get_youtube_urls_from_csv(csv_path)
-        print(tracks)
-
-        for track in tracks:
-            await downloader.add_to_queue([track["youtube_url"]])
-
-        while not downloader.download_queue.empty() or downloader.is_processing:
-            await asyncio.sleep(1)
-
-        print(
-            "\nTest completed. Check 'youtube_downloads' folder for downloaded files."
-        )
-
-    asyncio.run(main())
