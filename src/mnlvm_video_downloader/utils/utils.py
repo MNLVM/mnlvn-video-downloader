@@ -3,6 +3,7 @@ from pathlib import Path
 from sys import platform
 from uuid import uuid1
 from urllib.request import urlretrieve
+from shutil import which
 
 
 def safe_path_string(string: str) -> str:
@@ -22,11 +23,19 @@ def create_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
+def check_ffmpeg() -> bool:
+    return which("ffmpeg") is not None
+
+
 def clean_search_query(artist_title: str) -> str:
     cleaned = re.sub(r"\([^)]*\)", "", artist_title)
     cleaned = re.sub(r" - .*Remix", "", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned
+
+
+def check_file(path: Path) -> bool:
+    return path.is_file()
 
 
 class PathHolder:

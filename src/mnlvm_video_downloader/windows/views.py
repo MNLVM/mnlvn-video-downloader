@@ -1,7 +1,6 @@
 import tkinter as tk
 import asyncio
 from datetime import datetime
-from multiprocessing.pool import ThreadPool
 from windows.helper import open_many_file
 from tkinter import Menu, messagebox
 from typing import List, Tuple
@@ -183,7 +182,7 @@ class Window(customtkinter.CTk):
             text_color=("white", "#ffffff"),
             text="Télécharger",
             command=lambda: asyncio.run(
-                (self.yt_controler.download_video(self.down_path.get()))
+                (self.yt_controler._download(self.down_path.get()))
             ),
         )
         self.download_sons_button.grid(row=3, column=1, pady=5, sticky="nw")
@@ -217,10 +216,6 @@ class Window(customtkinter.CTk):
             font=customtkinter.CTkFont(size=8, weight="bold"),
         )
         self.footer_label.grid(row=0, column=1, columnspan=2, sticky="e", padx=300)
-
-    def _download_songs(self, link: str) -> None:
-        with ThreadPool() as pool:
-            pool.apply_async(lambda: None)
 
     def _show_about(self) -> None:
         messagebox.showinfo(

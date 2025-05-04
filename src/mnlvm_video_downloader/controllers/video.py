@@ -6,7 +6,10 @@ from typing import Any, Dict, List, Optional
 import subprocess
 import validators
 from yt_dlp import YoutubeDL
-from utils.utils import safe_path_string, clean_search_query
+from exceptions import FFmpegNotInstalledError
+from multiprocessing import cpu_count
+from multiprocessing.pool import ThreadPool
+from utils.utils import safe_path_string, clean_search_query, check_ffmpeg
 
 
 class YouTubeDownloaderController:
@@ -16,7 +19,7 @@ class YouTubeDownloaderController:
         max_workers: int = 4,
         logger: Any = None,
         browser: Optional[str] = "chrome",
-        ffmpeg_path: Optional[str | Path] = None,
+        ffmpeg_path: Optional[str | Path] = "ffmpeg",
     ):
         self.output_dir = Path(output_dir)
         self.max_workers = max_workers
@@ -27,48 +30,14 @@ class YouTubeDownloaderController:
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.ffmpeg_path = self._validate_ffmpeg_path(ffmpeg_path)
 
+        self._progress_callback = None
+        self._current_downloads = 0
+        self._total_downloads = 0
+
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    def _is_youtube_url(self, query: str) -> bool:
-        return any(
-            domain in query.lower()
-            for domain in ["youtube.com", "youtu.be", "youtube.nl"]
-        )
-
-    async def search_youtube(
-        self, query: str, max_results: int = 1, **opts
-    ) -> Optional[str]:
-        search_url = f"ytsearch{max_results}:{query}"
-        video_url = None
-        ydl_opts = {
-            "quiet": True,
-            "extract_flat": True,
-            "force_generic_extractor": True,
-            **opts,
-        }
-        with YoutubeDL(ydl_opts) as ydl:
-            result = ydl.extract_info(search_url, download=False)
-            if result and "entries" in result and result["entries"]:
-                video_url = result["entries"][0]["url"]
-        return video_url
-
-    async def process_track(self, query: str) -> Dict[str, str]:
-        search_query = clean_search_query(query)
-        youtube_url = await self.search_youtube(search_query)
-        return {"youtube_url": youtube_url}
-
-    async def get_youtube_urls_from_csv(self, csv_path: str) -> List[Dict[str, str]]:
-        results = []
-        with open(csv_path, mode="r", encoding="utf8", errors="ignore") as file:
-            csvreader = csv.reader(file)
-            for row in csvreader:
-                new_row = row[0].split(";")
-                if new_row[1] != "Listen num":
-                    results.append(new_row[1])
-
-        tasks = [self.process_track(q) for q in results]
-        results = await asyncio.gather(*tasks)
-        return [result for result in results]
+        if not check_ffmpeg() and self.ffmpeg_path == "ffmpeg":
+            raise FFmpegNotInstalledError
 
     def _validate_ffmpeg_path(self, ffmpeg_path: Optional[str]) -> Optional[str]:
         if ffmpeg_path is None:
@@ -85,31 +54,14 @@ class YouTubeDownloaderController:
             return str(ffmpeg_path)
         return None
 
-    async def process_queue(self) -> None:
-        self.is_processing = True
-        while not self.download_queue.empty():
-            url = await self.download_queue.get()
-            try:
-                await self.download(url)
-            except Exception as e:
-                self._handle_error(url, e)
-            finally:
-                self.download_queue.task_done()
-        self.is_processing = False
+    def set_progress_callback(self, callback):
+        self._progress_callback = callback
 
-    def _handle_error(self, url: str, error: Exception) -> None:
-        error_msg = f"Failed to download {url}: {str(error)}"
-        if self.logger:
-            self.logger.error(error_msg)
-
-    async def add_to_queue(self, urls: List[str]):
-        for url in urls:
-            if not validators.url(url):
-                continue
-            await self.download_queue.put(url)
-
-        if not self.is_processing and not self.download_queue.empty():
-            asyncio.create_task(self.process_queue())
+    def _is_youtube_url(self, query: str) -> bool:
+        return any(
+            domain in query.lower()
+            for domain in ["youtube.com", "youtu.be", "youtube.nl"]
+        )
 
     def _get_ydl_options(self) -> Dict[str, Any]:
         options = {
@@ -142,6 +94,62 @@ class YouTubeDownloaderController:
 
         return options
 
+    def search_youtube(self, query: str, max_results: int = 1, **opts) -> Optional[str]:
+        search_url = f"ytsearch{max_results}:{query}"
+        video_url = None
+        ydl_opts = {
+            "quiet": True,
+            "extract_flat": True,
+            "force_generic_extractor": True,
+            **opts,
+        }
+        with YoutubeDL(ydl_opts) as ydl:
+            result = ydl.extract_info(search_url, download=False)
+            if result and "entries" in result and result["entries"]:
+                video_url = result["entries"][0]["url"]
+        return video_url
+
+    def process_track(self, query: str) -> Dict[str, str]:
+        search_query = clean_search_query(query)
+        youtube_url = self.search_youtube(search_query)
+        return youtube_url
+
+    def get_youtube_urls_from_csv(self, csv_path: str) -> List[Dict[str, str]]:
+        results = []
+        with open(csv_path, mode="r", encoding="utf8", errors="ignore") as file:
+            csvreader = csv.reader(file)
+            for row in csvreader:
+                new_row = row[0].split(";")
+                if new_row[1] != "Listen num":
+                    results.append(new_row[1])
+        return [self.process_track(q) for q in results]
+
+    async def process_queue(self) -> None:
+        self.is_processing = True
+        while not self.download_queue.empty():
+            url = await self.download_queue.get()
+            try:
+                await self.download(url)
+            except Exception as e:
+                self._handle_error(url, e)
+            finally:
+                self.download_queue.task_done()
+        self.is_processing = False
+
+    def _handle_error(self, url: str, error: Exception) -> None:
+        error_msg = f"Failed to download {url}: {str(error)}"
+        if self.logger:
+            self.logger.error(error_msg)
+
+    async def add_to_queue(self, urls: List[str]):
+        for url in urls:
+            if not validators.url(url):
+                continue
+            await self.download_queue.put(url)
+
+        if not self.is_processing and not self.download_queue.empty():
+            asyncio.create_task(self.process_queue())
+
     def _extract_cookies(self, browser: str) -> Optional[str]:
         try:
             result = subprocess.run(
@@ -165,21 +173,27 @@ class YouTubeDownloaderController:
             print("yt-dlp not found. Please install yt-dlp first.")
         return None
 
-    async def download(self, url: str) -> Optional[Path]:
+    def download(self, url: str) -> Optional[Path]:
         is_youtube_uri: bool = self._is_youtube_url(url)
         if not is_youtube_uri:
             return None
 
         options = self._get_ydl_options()
 
+        def progress_hook(d):
+            if d["status"] == "downloading" and self._progress_callback:
+                percent = float(d["_percent_str"].strip("%"))
+                self._progress_callback(
+                    self._current_downloads,
+                    self._total_downloads,
+                    f"{url} - {str(percent)}",
+                )
+
+        options["progress_hooks"] = [progress_hook]
         try:
             with YoutubeDL(options) as ydl:
-                loop = asyncio.get_event_loop()
-                info = await loop.run_in_executor(
-                    self.executor, lambda: ydl.extract_info(url, download=True)
-                )
+                info = ydl.extract_info(url, download=True)
                 return self._handle_download_result(info)
-
         except Exception as e:
             self._handle_error(url, e)
             return None
@@ -199,13 +213,13 @@ class YouTubeDownloaderController:
             path = self.output_dir / f"{safe_path_string(info['title'])}.mp4"
             return path
 
-    async def download_video(self, csv_path: str = None) -> int:
-        if csv_path:
-            tracks = await self.get_youtube_urls_from_csv(csv_path)
-            for track in tracks:
-                await self.add_to_queue([track["youtube_url"]])
+    async def _download(self, csv_path: str = None) -> None:
+        tracks = self.get_youtube_urls_from_csv(csv_path)
+        await self.add_to_queue(tracks)
 
-            while not self.download_queue.empty() or self.is_processing:
-                await asyncio.sleep(1)
-            return 1
-        return 0
+        if self.download_queue.empty():
+            return
+
+        print(f"Downloading {self.download_queue.qsize()} videos...")
+        with ThreadPool(cpu_count()) as pool:
+            pool.map_async(self.download, self.download_queue, chunksize=20)
