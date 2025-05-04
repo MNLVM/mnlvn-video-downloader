@@ -9,7 +9,12 @@ from yt_dlp import YoutubeDL
 from exceptions import FFmpegNotInstalledError
 from multiprocessing import cpu_count
 from multiprocessing.pool import ThreadPool
-from utils.utils import safe_path_string, clean_search_query, check_ffmpeg
+from utils.utils import (
+    safe_path_string,
+    clean_search_query,
+    check_ffmpeg,
+    clean_percent_str,
+)
 
 
 class YouTubeDownloaderController:
@@ -179,15 +184,16 @@ class YouTubeDownloaderController:
             return None
 
         options = self._get_ydl_options()
+        options["no_color"] = True
 
         def progress_hook(d):
-            if d["status"] == "downloading" and self._progress_callback:
-                percent = float(d["_percent_str"].strip("%"))
-                self._progress_callback(
-                    self._current_downloads,
-                    self._total_downloads,
-                    f"{url} - {str(percent)}",
-                )
+            if d["status"] == "downloading":
+                try:
+                    raw_percent = d.get("_percent_str", "0.0%")
+                    percent_clean = float(clean_percent_str(raw_percent)) / 100.0
+                    print(f"Downloading... {int(percent_clean * 100)}%")
+                except Exception as e:
+                    print("Progress parse error:", e)
 
         options["progress_hooks"] = [progress_hook]
         try:
@@ -217,9 +223,28 @@ class YouTubeDownloaderController:
         tracks = self.get_youtube_urls_from_csv(csv_path)
         await self.add_to_queue(tracks)
 
-        if self.download_queue.empty():
+        print(f"Downloading {self.download_queue.qsize()} videos...")
+        urls = []
+
+        while not self.download_queue.empty():
+            url = await self.download_queue.get()
+            urls.append(url)
+
+        if not urls:
             return
 
-        print(f"Downloading {self.download_queue.qsize()} videos...")
+        self.total_downloads = len(urls)
+        self.completed_downloads = 0
+
+        if self._progress_callback:
+            self._progress_callback(0.0)
+
+        def download_and_track_progress(url):
+            self.download(url)
+            self.completed_downloads += 1
+            overall_progress = self.completed_downloads / self.total_downloads
+            if self._progress_callback:
+                self._progress_callback(overall_progress)
+
         with ThreadPool(cpu_count()) as pool:
-            pool.map_async(self.download, self.download_queue, chunksize=20)
+            pool.map(download_and_track_progress, urls)

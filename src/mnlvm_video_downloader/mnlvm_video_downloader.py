@@ -7,7 +7,5 @@ youtuber_controler = YouTubeDownloaderController(
     browser="chrome",
     ffmpeg_path="ffmpeg",
 )
-
-# asyncio.run(youtuber_controler._download(r"C:\Users\maste\Documents\Playlist\playlist.csv"))
 app = Window(yt_controler=youtuber_controler)
 app.mainloop()

@@ -38,6 +38,13 @@ def check_file(path: Path) -> bool:
     return path.is_file()
 
 
+ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+
+def clean_percent_str(s: str) -> str:
+    return ANSI_ESCAPE.sub("", s).strip().replace("%", "")
+
+
 class PathHolder:
     def __init__(self, data_path: str = None, downloads_path: str = None):
         if data_path is None:

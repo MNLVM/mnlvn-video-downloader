@@ -8,6 +8,7 @@ from PIL import Image
 import customtkinter
 from utils.constants import GLIPH_ICON_SIZE, DEFAULT_WINDOW_SIZE, DATE_FORMAT, BASE_DIR
 from controllers.video import YouTubeDownloaderController
+import threading
 
 # Modes: "System" (standard), "Dark", "Light"
 customtkinter.set_appearance_mode("System")
@@ -181,9 +182,7 @@ class Window(customtkinter.CTk):
             border_width=2,
             text_color=("white", "#ffffff"),
             text="Télécharger",
-            command=lambda: asyncio.run(
-                (self.yt_controler._download(self.down_path.get()))
-            ),
+            command=self._start_download_thread,
         )
         self.download_sons_button.grid(row=3, column=1, pady=5, sticky="nw")
 
@@ -195,6 +194,13 @@ class Window(customtkinter.CTk):
         )
         self.download_progressbar.grid(row=3, column=1, padx=150, pady=5, sticky="nw")
         self.download_progressbar.set(0)
+
+        self.progress_label = customtkinter.CTkLabel(
+            self.download_frame,
+            text="0%",
+            font=customtkinter.CTkFont(size=14, weight="bold"),
+        )
+        self.progress_label.grid(row=3, column=1, padx=150, pady=5, sticky="ne")
 
     def _create_dashboard_title(
         self, frame: customtkinter.CTkFrame, title: str
@@ -222,6 +228,30 @@ class Window(customtkinter.CTk):
             title="A propos",
             message="Ekila Downloader v0.1, copyright MNLV Africa \n Droits réservés",
         )
+
+    def _start_download_thread(self):
+        threading.Thread(target=self._download_async_wrapper).start()
+
+    def _download_async_wrapper(self):
+        self.yt_controler._progress_callback = self._update_progressbar
+        asyncio.run(self.yt_controler._download(self.down_path.get()))
+
+    def _update_progressbar(self, value: float):
+        percent = int(value * 100)
+        self.download_progressbar.set(value)
+        self.progress_label.configure(text=f"{percent}%")
+
+        if percent >= 100:
+            messagebox.showinfo(
+                "Téléchargement terminé",
+                "Tous les fichiers ont été téléchargés avec succès.",
+            )
+            self.download_progressbar.set(0)
+            self.progress_label.configure(text="0%")
+
+    def _set_progress(self, value: float):
+        self.download_progressbar.set(value)
+        self.progress_label.configure(text=f"{int(value * 100)}%")
 
     def quit(self) -> None:
         if messagebox.askyesno(
