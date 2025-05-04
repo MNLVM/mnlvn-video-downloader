@@ -18,3 +18,8 @@ __pycache__
 *.DS_Store     
 *.vscode-test
 *.coverage.*
+ffmpeg
+*.log
+downloads
+.env
+*.env   
