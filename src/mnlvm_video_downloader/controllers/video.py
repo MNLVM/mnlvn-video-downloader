@@ -193,10 +193,19 @@ class YouTubeDownloaderController:
             for entry in info["entries"]:
                 if entry:
                     path = self.output_dir / f"{safe_path_string(entry['title'])}.mp4"
-                    print(f"Downloaded playlist item: {entry['title']}")
                     paths.append(path)
             return paths[0] if paths else None
         else:
             path = self.output_dir / f"{safe_path_string(info['title'])}.mp4"
-            print(f"Downloaded: {info['title']}")
             return path
+
+    async def download_video(self, csv_path: str = None) -> int:
+        if csv_path:
+            tracks = await self.get_youtube_urls_from_csv(csv_path)
+            for track in tracks:
+                await self.add_to_queue([track["youtube_url"]])
+
+            while not self.download_queue.empty() or self.is_processing:
+                await asyncio.sleep(1)
+            return 1
+        return 0

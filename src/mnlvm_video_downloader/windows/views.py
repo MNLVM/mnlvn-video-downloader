@@ -1,4 +1,5 @@
 import tkinter as tk
+import asyncio
 from datetime import datetime
 from multiprocessing.pool import ThreadPool
 from windows.helper import open_many_file
@@ -7,6 +8,7 @@ from typing import List, Tuple
 from PIL import Image
 import customtkinter
 from utils.constants import GLIPH_ICON_SIZE, DEFAULT_WINDOW_SIZE, DATE_FORMAT, BASE_DIR
+from controllers.video import YouTubeDownloaderController
 
 # Modes: "System" (standard), "Dark", "Light"
 customtkinter.set_appearance_mode("System")
@@ -15,13 +17,14 @@ customtkinter.set_default_color_theme("green")
 
 
 class Window(customtkinter.CTk):
-    """Main application interface for Ekila Downloader."""
-
-    def __init__(self, user_login: str) -> None:
+    def __init__(
+        self, yt_controler: YouTubeDownloaderController, user_login: str = "Anonymous"
+    ) -> None:
         super().__init__()
         self.user_login = user_login
         self.list_file: List[str] = []
         self.is_song_loading: bool = False
+        self.yt_controler = yt_controler
 
         self._load_images()
 
@@ -179,7 +182,9 @@ class Window(customtkinter.CTk):
             border_width=2,
             text_color=("white", "#ffffff"),
             text="Télécharger",
-            command=None,
+            command=lambda: asyncio.run(
+                (self.yt_controler.download_video(self.down_path.get()))
+            ),
         )
         self.download_sons_button.grid(row=3, column=1, pady=5, sticky="nw")
 
@@ -212,15 +217,6 @@ class Window(customtkinter.CTk):
             font=customtkinter.CTkFont(size=8, weight="bold"),
         )
         self.footer_label.grid(row=0, column=1, columnspan=2, sticky="e", padx=300)
-
-    def _paginate(self, page: str) -> None:
-        for child in self.button_frame.winfo_children():
-            if isinstance(child, customtkinter.CTkButton):
-                child.configure(fg_color=("white", "white"))
-
-        if page == "Télécharger":
-            self._create_download_son_panel()
-            self.button_frame.winfo_children()[2].configure(fg_color=("green", "green"))
 
     def _download_songs(self, link: str) -> None:
         with ThreadPool() as pool:
