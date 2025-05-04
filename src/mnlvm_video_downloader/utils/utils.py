@@ -22,6 +22,13 @@ def create_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
+async def clean_search_query(artist_title: str) -> str:
+    cleaned = re.sub(r"\([^)]*\)", "", artist_title)
+    cleaned = re.sub(r" - .*Remix", "", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
 class PathHolder:
     def __init__(self, data_path: str = None, downloads_path: str = None):
         if data_path is None:

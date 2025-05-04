@@ -1,6 +1,7 @@
 import tkinter as tk
 from datetime import datetime
 from multiprocessing.pool import ThreadPool
+from windows.helper import open_many_file
 from tkinter import Menu, messagebox
 from typing import List, Tuple
 from PIL import Image
@@ -27,7 +28,6 @@ class Window(customtkinter.CTk):
 
         # Setup the application
         self._setup_window()
-        self._initialize_controller()
         self._create_widgets()
 
         # Start the date updater
@@ -51,6 +51,13 @@ class Window(customtkinter.CTk):
             str(BASE_DIR) + "\windows\images\quitter.png", GLIPH_ICON_SIZE
         )
 
+    def set_path_file(self) -> None:
+        path, _ = open_many_file()
+        if self.link_entry:
+            if self.link_entry.get() != "":
+                self.link_entry.delete(0, tk.END)
+            self.link_entry.insert(0, str(path))
+
     def _create_image(self, path: str, size: Tuple[int, int]) -> customtkinter.CTkImage:
         return customtkinter.CTkImage(Image.open(path), size=size)
 
@@ -61,15 +68,12 @@ class Window(customtkinter.CTk):
         self.grid_rowconfigure(6, weight=2)
         self.columnconfigure(0, weight=0)
 
-    def _initialize_controller(self) -> None:
-        pass
-
     def _create_widgets(self) -> None:
         self._create_menu_bar()
         self._create_header()
         self._create_sidebar()
-        self._create_extract_csv_panel()
-        self._create_button_list()
+        self._create_download_son_panel()
+        # self._create_button_list()
         self._create_footer()
 
     def change_appearance_mode_event(self, new_appearance_mode: str) -> None:
@@ -96,19 +100,8 @@ class Window(customtkinter.CTk):
 
         menu_file = Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="Fichier", menu=menu_file)
-
-        menu_file.add_command(label="Ouvrir un fichier csv", command=None)
-        menu_file.add_command(label="Ouvrir vos fichiers audios", command=None)
-        menu_file.add_command(
-            label="Ouvrir un dossier contenant les sons", command=None
-        )
-        menu_file.add_separator()
-        menu_file.add_command(label="Créer une playlist", command=None)
-        menu_file.add_command(label="Copier le lien de la playlist", command=None)
-        menu_file.add_separator()
+        menu_file.add_command(label="Ouvrir un fichier csv", command=self.set_path_file)
         menu_file.add_command(label="Vider", command=None)
-        menu_file.add_command(label="Actualiser", command=None)
-        menu_file.add_separator()
         menu_file.add_command(label="Quitter", command=self.quit)
 
         # Help menu
@@ -117,9 +110,7 @@ class Window(customtkinter.CTk):
         menu_help.add_command(label="A propos", command=self._show_about)
 
     def _create_header(self) -> None:
-        self.user_label = customtkinter.CTkLabel(
-            master=self, text=f"{self.user_login} est connecté"
-        )
+        self.user_label = customtkinter.CTkLabel(master=self, text=f"{self.user_login}")
         self.user_label.grid(row=0, column=0, sticky="nw", padx=2)
         self.date_label = customtkinter.CTkLabel(
             master=self, text=datetime.today().strftime(DATE_FORMAT)
@@ -278,7 +269,7 @@ class Window(customtkinter.CTk):
         customtkinter.CTkLabel(
             self.download_frame,
             font=customtkinter.CTkFont(size=15, weight="bold"),
-            text="Lien:",
+            text="Fichier csv:",
         ).grid(column=1, row=1, sticky="w", pady=15, padx=5)
 
         self.link_entry = customtkinter.CTkEntry(
@@ -378,35 +369,33 @@ class Window(customtkinter.CTk):
         self.progressbar.grid(row=0, column=2, sticky=tk.W + tk.E)
         self.progressbar.set(0)
 
-    def _create_button_list(self) -> None:
-        self.button_frame = customtkinter.CTkFrame(self, corner_radius=0)
-        self.button_frame.grid(row=6, column=1, sticky="w")
+    # def _create_button_list(self) -> None:
+    #     self.button_frame = customtkinter.CTkFrame(self, corner_radius=0)
+    #     self.button_frame.grid(row=6, column=1, sticky="w")
 
-        for i in range(5):
-            self.button_frame.columnconfigure(i, weight=1)
+    #     for i in range(5):
+    #         self.button_frame.columnconfigure(i, weight=1)
 
-        # Create buttons
-        buttons = [
-            ("Recherche", self.search_image, "Recherche"),
-            ("Télécharger", self.download_image, "Télécharger"),
-            ("Quitter", self.quit_image, self.quit),
-        ]
+    #     buttons = [
+    #         # ("Télécharger", self.download_image, "Télécharger"),
+    #         ("Quitter", self.quit_image, self.quit),
+    #     ]
 
-        for i, (text, image, command) in enumerate(buttons):
-            btn = customtkinter.CTkButton(
-                self.button_frame,
-                corner_radius=10,
-                text_color=("black", "#000000"),
-                text=text,
-                image=image,
-                fg_color=("white", "white"),
-                height=60,
-                font=customtkinter.CTkFont(size=12, weight="bold"),
-                command=command
-                if callable(command)
-                else lambda cmd=command: self._paginate(cmd),
-            )
-            btn.grid(row=0, column=i, sticky=tk.W + tk.E, padx=3)
+    #     for i, (text, image, command) in enumerate(buttons):
+    #         btn = customtkinter.CTkButton(
+    #             self.button_frame,
+    #             corner_radius=10,
+    #             text_color=("black", "#000000"),
+    #             text=text,
+    #             image=image,
+    #             fg_color=("white", "white"),
+    #             height=60,
+    #             font=customtkinter.CTkFont(size=12, weight="bold"),
+    #             command=command
+    #             if callable(command)
+    #             else lambda cmd=command: self._paginate(cmd),
+    #         )
+    #         btn.grid(row=0, column=i, sticky=tk.W + tk.E, padx=3)
 
     def _create_dashboard_title(
         self, frame: customtkinter.CTkFrame, title: str
@@ -434,18 +423,15 @@ class Window(customtkinter.CTk):
             if isinstance(child, customtkinter.CTkButton):
                 child.configure(fg_color=("white", "white"))
 
-        if page == "Transfert":
-            self._create_transfert_son_panel()
-            self.button_frame.winfo_children()[1].configure(fg_color=("green", "green"))
-        elif page == "Télécharger":
+        # if page == "Transfert":
+        #     self._create_transfert_son_panel()
+        #     self.button_frame.winfo_children()[1].configure(fg_color=("green", "green"))
+        if page == "Télécharger":
             self._create_download_son_panel()
             self.button_frame.winfo_children()[2].configure(fg_color=("green", "green"))
-        elif page == "Conversion":
-            self._create_conversion_son_panel()
-            self.button_frame.winfo_children()[3].configure(fg_color=("green", "green"))
-        elif page == "Recherche":
-            self._create_extract_csv_panel()
-            self.button_frame.winfo_children()[0].configure(fg_color=("green", "green"))
+        # elif page == "Recherche":
+        #     self._create_extract_csv_panel()
+        #     self.button_frame.winfo_children()[0].configure(fg_color=("green", "green"))
 
     def _download_songs(self, link: str) -> None:
         with ThreadPool() as pool:
@@ -458,7 +444,6 @@ class Window(customtkinter.CTk):
         )
 
     def quit(self) -> None:
-        """Quit the application after confirmation."""
         if messagebox.askyesno(
             title="Exit", message="Etes vous sur de vouloir quitter?"
         ):

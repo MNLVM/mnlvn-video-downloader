@@ -1,12 +1,33 @@
 import asyncio
+import csv
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import subprocess
-import tldextract
 import validators
 from yt_dlp import YoutubeDL
-from utils.utils import safe_path_string
+import re
+# from utils.utils import safe_path_string, clean_search_query
+
+
+def safe_path_string(string: str) -> str:
+    keep_characters = " !£$%^&()_-+=,.;'@#~[]{}"
+    new_string = ""
+
+    for c in string:
+        if c.isalnum() or c in keep_characters:
+            new_string = new_string + c
+        else:
+            new_string = new_string + "_"
+
+    return re.sub(r"\.+$", "", new_string.rstrip()).encode("utf8").decode("utf8")
+
+
+def clean_search_query(artist_title: str) -> str:
+    cleaned = re.sub(r"\([^)]*\)", "", artist_title)
+    cleaned = re.sub(r" - .*Remix", "", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
 
 
 class YouTubeDownloaderController:
@@ -29,6 +50,47 @@ class YouTubeDownloaderController:
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
+    def _is_youtube_url(self, query: str) -> bool:
+        return any(
+            domain in query.lower()
+            for domain in ["youtube.com", "youtu.be", "youtube.nl"]
+        )
+
+    async def search_youtube(
+        self, query: str, max_results: int = 1, **opts
+    ) -> Optional[str]:
+        search_url = f"ytsearch{max_results}:{query}"
+        video_url = None
+        ydl_opts = {
+            "quiet": True,
+            "extract_flat": True,
+            "force_generic_extractor": True,
+            **opts,
+        }
+        with YoutubeDL(ydl_opts) as ydl:
+            result = ydl.extract_info(search_url, download=False)
+            if result and "entries" in result and result["entries"]:
+                video_url = result["entries"][0]["url"]
+        return video_url
+
+    async def process_track(self, query: str) -> Dict[str, str]:
+        search_query = clean_search_query(query)
+        youtube_url = await self.search_youtube(search_query)
+        return {"youtube_url": youtube_url}
+
+    async def get_youtube_urls_from_csv(self, csv_path: str) -> List[Dict[str, str]]:
+        results = []
+        with open(csv_path, mode="r", encoding="utf8", errors="ignore") as file:
+            csvreader = csv.reader(file)
+            for row in csvreader:
+                new_row = row[0].split(";")
+                if new_row[1] != "Listen num":
+                    results.append(new_row[1])
+
+        tasks = [self.process_track(q) for q in results]
+        results = await asyncio.gather(*tasks)
+        return [result for result in results]
+
     def _validate_ffmpeg_path(self, ffmpeg_path: Optional[str]) -> Optional[str]:
         if ffmpeg_path is None:
             try:
@@ -38,14 +100,13 @@ class YouTubeDownloaderController:
                 print(
                     "Warning: FFmpeg not found in system PATH. Audio-video merging may fail."
                 )
-                return None
 
         ffmpeg_path = Path(ffmpeg_path)
         if ffmpeg_path.exists():
             return str(ffmpeg_path)
         return None
 
-    async def process_queue(self):
+    async def process_queue(self) -> None:
         self.is_processing = True
         while not self.download_queue.empty():
             url = await self.download_queue.get()
@@ -57,7 +118,7 @@ class YouTubeDownloaderController:
                 self.download_queue.task_done()
         self.is_processing = False
 
-    def _handle_error(self, url: str, error: Exception):
+    def _handle_error(self, url: str, error: Exception) -> None:
         error_msg = f"Failed to download {url}: {str(error)}"
         if self.logger:
             self.logger.error(error_msg)
@@ -73,7 +134,7 @@ class YouTubeDownloaderController:
 
     def _get_ydl_options(self) -> Dict[str, Any]:
         options = {
-            "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+            "format": "bestvideo[ext=mp4][height<=2160]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
             "outtmpl": str(self.output_dir / "%(title)s.%(ext)s"),
             "restrictfilenames": True,
             "quiet": False,
@@ -126,8 +187,8 @@ class YouTubeDownloaderController:
         return None
 
     async def download(self, url: str) -> Optional[Path]:
-        domain = tldextract.extract(url).domain
-        if domain != "youtube":
+        is_youtube_uri: bool = self._is_youtube_url(url)
+        if not is_youtube_uri:
             return None
 
         options = self._get_ydl_options()
@@ -160,3 +221,30 @@ class YouTubeDownloaderController:
             path = self.output_dir / f"{safe_path_string(info['title'])}.mp4"
             print(f"Downloaded: {info['title']}")
             return path
+
+
+if __name__ == "__main__":
+
+    async def main():
+        downloader = YouTubeDownloaderController(
+            output_dir="downloads",
+            max_workers=4,
+            browser="chrome",
+            ffmpeg_path="ffmpeg",
+        )
+
+        csv_path = r"C:\Users\maste\Documents\Playlist\playlist.csv"
+        tracks = await downloader.get_youtube_urls_from_csv(csv_path)
+        print(tracks)
+
+        for track in tracks:
+            await downloader.add_to_queue([track["youtube_url"]])
+
+        while not downloader.download_queue.empty() or downloader.is_processing:
+            await asyncio.sleep(1)
+
+        print(
+            "\nTest completed. Check 'youtube_downloads' folder for downloaded files."
+        )
+
+    asyncio.run(main())
