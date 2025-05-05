@@ -170,10 +170,11 @@ class Window(customtkinter.CTk):
         )
         self.link_entry.grid(column=1, row=1, sticky="nsew", pady=15, padx=100)
 
-        self.textbox = customtkinter.CTkTextbox(
+        self.scrollable_frame = customtkinter.CTkScrollableFrame(
             self.download_frame, width=800, height=250
         )
-        self.textbox.grid(row=2, column=1, pady=5, sticky="nw")
+        self.scrollable_frame.grid(row=2, column=1, pady=5, sticky="nw")
+        self.song_widgets = {}
 
         self.download_sons_button = customtkinter.CTkButton(
             self.download_frame,
@@ -234,7 +235,15 @@ class Window(customtkinter.CTk):
 
     def _download_async_wrapper(self):
         self.yt_controler._progress_callback = self._update_progressbar
-        asyncio.run(self.yt_controler._download(self.down_path.get()))
+        self.yt_controler.set_individual_progress_callback(
+            self.update_individual_progress
+        )
+        asyncio.run(
+            self.yt_controler._download(
+                self.down_path.get(), self.scrollable_frame, self.song_widgets
+            )
+        )
+        self.link_entry.delete(0, tk.END)
 
     def _update_progressbar(self, value: float):
         percent = int(value * 100)
@@ -248,6 +257,11 @@ class Window(customtkinter.CTk):
             )
             self.download_progressbar.set(0)
             self.progress_label.configure(text="0%")
+
+    def update_individual_progress(self, url: str, percent: float):
+        widgets = self.song_widgets.get(url)
+        if widgets:
+            widgets["progressbar"].set(percent)
 
     def _set_progress(self, value: float):
         self.download_progressbar.set(value)

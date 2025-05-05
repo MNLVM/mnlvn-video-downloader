@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import subprocess
+import customtkinter
 import validators
 from yt_dlp import YoutubeDL
 from exceptions import FFmpegNotInstalledError
@@ -61,6 +62,9 @@ class YouTubeDownloaderController:
 
     def set_progress_callback(self, callback):
         self._progress_callback = callback
+
+    def set_individual_progress_callback(self, callback):
+        self._individual_progress_callback = callback
 
     def _is_youtube_url(self, query: str) -> bool:
         return any(
@@ -186,16 +190,19 @@ class YouTubeDownloaderController:
         options = self._get_ydl_options()
         options["no_color"] = True
 
-        def progress_hook(d):
-            if d["status"] == "downloading":
-                try:
-                    raw_percent = d.get("_percent_str", "0.0%")
-                    percent_clean = float(clean_percent_str(raw_percent)) / 100.0
-                    print(f"Downloading... {int(percent_clean * 100)}%")
-                except Exception as e:
-                    print("Progress parse error:", e)
+        def make_progress_hook(url):
+            def progress_hook(d):
+                if d["status"] == "downloading" and self._individual_progress_callback:
+                    try:
+                        raw_percent = d.get("_percent_str", "0.0%")
+                        percent_clean = float(clean_percent_str(raw_percent)) / 100.0
+                        self._individual_progress_callback(url, percent_clean)
+                    except Exception as e:
+                        print("Progress parse error:", e)
 
-        options["progress_hooks"] = [progress_hook]
+            return progress_hook
+
+        options["progress_hooks"] = [make_progress_hook(url)]
         try:
             with YoutubeDL(options) as ydl:
                 info = ydl.extract_info(url, download=True)
@@ -219,7 +226,9 @@ class YouTubeDownloaderController:
             path = self.output_dir / f"{safe_path_string(info['title'])}.mp4"
             return path
 
-    async def _download(self, csv_path: str = None) -> None:
+    async def _download(
+        self, csv_path: str = None, scrolable_frame=None, song_widgets=None
+    ) -> None:
         tracks = self.get_youtube_urls_from_csv(csv_path)
         await self.add_to_queue(tracks)
 
@@ -229,6 +238,16 @@ class YouTubeDownloaderController:
         while not self.download_queue.empty():
             url = await self.download_queue.get()
             urls.append(url)
+
+            if scrolable_frame and song_widgets:
+                label = customtkinter.CTkLabel(scrolable_frame, text=url, anchor="w")
+                label.pack(fill="x", padx=10, pady=(5, 0))
+
+                progressbar = customtkinter.CTkProgressBar(scrolable_frame, height=10)
+                progressbar.set(0)
+                progressbar.pack(fill="x", padx=10, pady=(0, 5))
+
+                song_widgets[url] = {"label": label, "progressbar": progressbar}
 
         if not urls:
             return
